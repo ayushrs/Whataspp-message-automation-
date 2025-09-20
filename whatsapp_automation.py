@@ -1,6 +1,8 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import pandas as pd
 import math
@@ -9,13 +11,11 @@ import math
 # SETTINGS
 # ======================
 CSV_FILE = "contacts.csv"   # Path to your contacts file
-MESSAGE = "hello my name is ayush"
+MESSAGE = "Radhe Radhe"
 BATCH_SIZE = 200            # Number of contacts per run
 DELAY_BETWEEN_MSGS = 3      # Seconds delay to avoid spam detection
 
-# Use a dedicated profile folder for Selenium
-# (This will be created if it doesn’t exist)
-PROFILE_PATH = r"D:\selenium_profile"   # <-- NEW FOLDER just for Selenium
+PROFILE_PATH = r"D:\selenium_profile"   # Persistent profile (no QR each time)
 # ======================
 
 # Load contacts
@@ -24,16 +24,31 @@ contacts = df["Name"].dropna().tolist()
 total_contacts = len(contacts)
 print(f"Loaded {total_contacts} contacts from {CSV_FILE}")
 
-# Setup Chrome with persistent profile (no QR every time after first login)
+# Setup Chrome
 options = webdriver.ChromeOptions()
 options.add_argument(f"--user-data-dir={PROFILE_PATH}")
 
 driver = webdriver.Chrome(options=options)
 driver.get("https://web.whatsapp.com")
-print("👉 Scan the QR code once. It will stay logged in for future runs.")
-time.sleep(15)  # wait for WhatsApp to fully load
+print("👉 Scan the QR code if required...")
 
+# Wait until WhatsApp home screen loads (chat list or search bar)
+try:
+    WebDriverWait(driver, 180).until(
+        EC.any_of(
+            EC.presence_of_element_located((By.XPATH, "//div[@role='textbox'][@contenteditable='true']")),
+            EC.presence_of_element_located((By.ID, "pane-side"))
+        )
+    )
+    print("✅ WhatsApp loaded successfully!")
+except:
+    print("❌ Timeout: WhatsApp did not load in time.")
+    driver.quit()
+    exit()
+
+# ======================
 # Process in batches
+# ======================
 total_batches = math.ceil(total_contacts / BATCH_SIZE)
 
 for batch in range(total_batches):
@@ -45,7 +60,9 @@ for batch in range(total_batches):
     for contact in batch_contacts:
         try:
             # 🔍 Search contact
-            search_box = driver.find_element(By.XPATH, "//div[@contenteditable='true'][@data-tab='3']")
+            search_box = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.XPATH, "//div[@role='textbox'][@contenteditable='true']"))
+            )
             search_box.clear()
             search_box.click()
             time.sleep(1)
@@ -57,8 +74,11 @@ for batch in range(total_batches):
             user.click()
             time.sleep(1)
 
-            # 💬 Type and send message
-            message_box = driver.find_element(By.XPATH, "//div[@contenteditable='true'][@data-tab='10']")
+            # 💬 Find the *last* editable textbox (message box)
+            message_box = WebDriverWait(driver, 20).until(
+                EC.presence_of_all_elements_located((By.XPATH, "//div[@role='textbox'][@contenteditable='true']"))
+            )[-1]
+
             message_box.send_keys(MESSAGE)
             message_box.send_keys(Keys.ENTER)
 
